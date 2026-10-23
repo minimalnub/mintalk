@@ -28,6 +28,7 @@
     .logo{font-size:24px;font-weight:800;letter-spacing:-1px;cursor:pointer;}
     .header-right{display:flex;align-items:center;gap:12px;}
     .icon-btn{background:none;border:none;cursor:pointer;color:var(--text);font-size:20px;padding:6px;border-radius:50%;transition:background .15s;display:flex;align-items:center;justify-content:center;}
+    #theme-toggle{font-size:11px;font-weight:700;color:var(--text-sub);letter-spacing:.5px;padding:5px 8px;border-radius:8px;}
     .icon-btn:hover{background:var(--surface2);}
     .avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border);}
     .avatar-placeholder{width:32px;height:32px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--text-sub);cursor:pointer;border:2px solid var(--border);flex-shrink:0;}
@@ -159,7 +160,7 @@
 
     /* 배너 영역 */
     .profile-banner {
-      height: 130px;
+      height: 64px;
       background: var(--surface2);
       border-bottom: 1px solid var(--border);
     }
@@ -167,7 +168,7 @@
     /* 프로필 정보 카드 */
     .profile-info-card {
       padding: 0 16px 16px;
-      border-bottom: 8px solid var(--surface2);
+      border-bottom: 1px solid var(--border);
       position: relative;
     }
     .profile-info-top {
@@ -234,12 +235,12 @@
       font-size: 15px; font-weight: 600;
       color: var(--text-sub);
       cursor: pointer;
-      border-bottom: 3px solid transparent;
+      border-bottom: 1px solid transparent;
       transition: color .15s, border-color .15s;
     }
     .profile-tab.active {
       color: var(--text);
-      border-bottom-color: var(--text);
+      border-bottom-color: var(--border);
     }
 
     /* 유저 피드 */
@@ -415,14 +416,14 @@
 <header>
   <div class="logo" onclick="scrollTo(0,0)">MinTalk</div>
   <div class="header-right">
-    <button class="icon-btn" id="theme-toggle" title="테마 전환">🌙</button>
-    <div id="header-user"></div>
+    <button class="icon-btn" id="theme-toggle" title="테마 전환">DARK</button>
+    <div id="header-user" style="display:flex;align-items:center;gap:10px;"></div>
   </div>
 </header>
 
 <main>
   <div id="login-banner">
-    <h2>환영합니다 👋</h2>
+    <h2>환영합니다</h2>
     <p>Google 계정으로 로그인하면<br>게시물을 작성하고 반응할 수 있어요.</p>
     <button class="google-btn" id="login-btn">
       <svg viewBox="0 0 48 48">
@@ -455,7 +456,7 @@
 <!-- 프로필 모달 -->
 <div class="modal-overlay" id="profile-modal">
   <div class="modal">
-    <button class="modal-close" id="modal-close">✕</button>
+    <button class="modal-close" id="modal-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div class="profile-header">
       <div id="modal-avatar"></div>
       <div class="profile-info">
@@ -508,7 +509,7 @@
 <div id="notif-overlay"></div>
 <div id="notif-panel">
   <div class="notif-panel-header">
-    <h3>💬 댓글 알림</h3>
+    <h3 style="display:flex;align-items:center;gap:7px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 댓글 알림</h3>
     <button class="notif-panel-clear" id="notif-panel-clear">모두 읽음</button>
   </div>
   <div class="notif-list" id="notif-list">
@@ -642,7 +643,7 @@
         document.getElementById("profile-page-stat-posts").textContent = snap.size;
 
         if (snap.empty) {
-          feedEl.innerHTML = '<div class="profile-feed-empty">아직 게시물이 없어요 ✍️</div>';
+          feedEl.innerHTML = '<div class="profile-feed-empty">아직 게시물이 없어요.</div>';
           return;
         }
 
@@ -660,7 +661,7 @@
         });
       }, err => {
         console.error("프로필 피드 오류:", err);
-        feedEl.innerHTML = '<div class="profile-feed-empty">게시물을 불러올 수 없어요 😢</div>';
+        feedEl.innerHTML = '<div class="profile-feed-empty">게시물을 불러올 수 없어요</div>';
       });
   }
 
@@ -782,7 +783,7 @@
         .where("authorId", "==", currentUser.uid).get();
 
       if (myPostsSnap.empty) {
-        listEl.innerHTML = '<div class="notif-empty">아직 알림이 없어요 🔔</div>';
+        listEl.innerHTML = '<div class="notif-empty" style="display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 아직 알림이 없어요</div>';
         return;
       }
 
@@ -816,7 +817,7 @@
         });
 
       if (notifItems.length === 0) {
-        listEl.innerHTML = '<div class="notif-empty">아직 댓글 알림이 없어요 🔔</div>';
+        listEl.innerHTML = '<div class="notif-empty" style="display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 아직 댓글 알림이 없어요</div>';
         return;
       }
 
@@ -866,7 +867,7 @@
 
     } catch(e) {
       console.error("알림 로드 오류:", e);
-      listEl.innerHTML = '<div class="notif-empty">알림을 불러올 수 없어요 😢</div>';
+      listEl.innerHTML = '<div class="notif-empty">알림을 불러올 수 없어요</div>';
     }
   }
 
@@ -883,7 +884,7 @@
       card.style.background = "rgba(29,155,240,.12)";
       setTimeout(() => { card.style.background = ""; }, 1800);
     } else {
-      showToast("게시글을 찾을 수 없어요 😢");
+      showToast("게시글을 찾을 수 없어요");
     }
   }
 
@@ -893,7 +894,7 @@
     const html = document.documentElement;
     const isDark = html.getAttribute("data-theme") === "dark";
     html.setAttribute("data-theme", isDark ? "light" : "dark");
-    themeBtn.textContent = isDark ? "🌙" : "☀️";
+    themeBtn.textContent = isDark ? "DARK" : "LITE";
   });
 
   // ── Auth ──
@@ -937,20 +938,21 @@
       bellBtn.className = "icon-btn";
       bellBtn.title = "댓글 알림";
       bellBtn.id = "notif-bell-btn";
-      bellBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
+      bellBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
       bellBtn.addEventListener("click", toggleNotifPanel);
       bellWrap.appendChild(bellBtn);
       const badge = document.createElement("span");
       badge.className = "notif-badge hidden";
       badge.id = "notif-badge";
       bellWrap.appendChild(badge);
-      headerUser.appendChild(bellWrap);
-      // 아바타 버튼 (프로필)
+      // 아바타 버튼 (프로필) - 먼저 추가해 왼쪽에 위치
       const avWrap = document.createElement("div");
       const av = avatarEl(user, 32);
       av.addEventListener("click", openProfileModal);
       avWrap.appendChild(av);
       headerUser.appendChild(avWrap);
+      // 벨 버튼 - 아바타 오른쪽
+      headerUser.appendChild(bellWrap);
     } else {
       banner.style.display = "block";
       composer.style.display = "none";
@@ -983,7 +985,7 @@
       bio: document.getElementById("profile-bio").value,
       displayName: currentUser.displayName,
       photoURL: currentUser.photoURL
-    }, {merge:true}).then(() => { showToast("저장됐어요 ✅"); closeProfileModal(); });
+    }, {merge:true}).then(() => { showToast("저장됐어요"); closeProfileModal(); });
   });
 
   // ── 게시물 작성 ──
@@ -1012,7 +1014,7 @@
       });
       postInput.value = "";
       charCount.textContent = "0 / 500";
-      showToast("게시됐어요 🎉");
+      showToast("게시됐어요");
     } catch(e) { showToast("오류: " + e.message); }
     postBtn.disabled = false;
   });
@@ -1027,7 +1029,7 @@
       .limit(50)
       .onSnapshot(snap => {
         if (snap.empty) {
-          feed.innerHTML = '<div class="feed-empty" style="text-align:center;padding:60px 20px;color:var(--text-sub);">아직 게시물이 없어요. 첫 글을 써보세요! ✍️</div>';
+          feed.innerHTML = '<div class="feed-empty" style="text-align:center;padding:60px 20px;color:var(--text-sub);">아직 게시물이 없어요. 첫 글을 써보세요.</div>';
           return;
         }
         // 기존 카드 없는 postId 제거, 새 카드 추가
@@ -1108,7 +1110,7 @@
             <span class="post-author">${escHtml(data.authorName||"익명")}</span>
             <div style="display:flex;align-items:center;gap:8px;">
               <span class="post-time">${timeAgo(data.createdAt)}</span>
-              ${isOwner ? `<button class="delete-btn" data-id="${postId}" title="삭제">🗑</button>` : ""}
+              ${isOwner ? `<button class="delete-btn" data-id="${postId}" title="삭제"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>` : ""}
             </div>
           </div>
         </div>
@@ -1257,7 +1259,7 @@
       const delBtn = document.createElement("button");
       delBtn.className = "reply-delete-btn";
       delBtn.title = "삭제";
-      delBtn.textContent = "✕";
+      delBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
       delBtn.addEventListener("click", () => deleteReply(postId, replyId));
       item.appendChild(delBtn);
     }
@@ -1284,7 +1286,7 @@
       batch.update(postRef, { replyCount: firebase.firestore.FieldValue.increment(1) });
       await batch.commit();
       inputEl.value = "";
-      showToast("댓글이 달렸어요 💬");
+      showToast("댓글이 달렸어요");
     } catch(e) { showToast("오류: " + e.message); }
     btnEl.disabled = false;
   }
@@ -1308,7 +1310,7 @@
     try {
       await db.collection("posts").doc(postId).delete();
       if (replyListeners[postId]) { replyListeners[postId](); delete replyListeners[postId]; }
-      showToast("삭제됐어요 🗑");
+      showToast("삭제됐어요");
     } catch(e) { showToast("오류: " + e.message); }
   }
 
