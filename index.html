@@ -110,6 +110,155 @@
     .signout-btn{width:100%;padding:12px;background:none;border:1.5px solid var(--border);border-radius:10px;color:#ff3b5c;font-size:15px;font-weight:600;cursor:pointer;transition:background .15s;}
     .signout-btn:hover{background:rgba(255,59,92,.08);}
 
+
+    /* ── 사용자 프로필 페이지 ── */
+    #user-profile-page {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 150;
+      overflow-y: auto;
+    }
+    #user-profile-page.open { display: block; }
+
+    .profile-page-header {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 16px;
+      height: 56px;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+    }
+    .profile-page-back {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 22px;
+      padding: 6px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s;
+    }
+    .profile-page-back:hover { background: var(--surface2); }
+    .profile-page-header-info h2 { font-size: 17px; font-weight: 800; }
+    .profile-page-header-info span { font-size: 12px; color: var(--text-sub); }
+
+    .profile-page-body { max-width: 680px; margin: 0 auto; }
+    @media(min-width:680px){
+      .profile-page-body { border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+    }
+
+    /* 배너 영역 */
+    .profile-banner {
+      height: 130px;
+      background: linear-gradient(135deg, #1d9bf0 0%, #0d47a1 100%);
+    }
+
+    /* 프로필 정보 카드 */
+    .profile-info-card {
+      padding: 0 16px 16px;
+      border-bottom: 8px solid var(--surface2);
+      position: relative;
+    }
+    .profile-info-top {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .profile-page-avatar {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 4px solid var(--bg);
+      margin-top: -40px;
+      flex-shrink: 0;
+    }
+    .profile-page-avatar-placeholder {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      background: #1d9bf0;
+      color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px; font-weight: 800;
+      border: 4px solid var(--bg);
+      margin-top: -40px;
+      flex-shrink: 0;
+    }
+    .profile-page-name {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+    .profile-page-sub {
+      font-size: 14px;
+      color: var(--text-sub);
+      margin-bottom: 12px;
+    }
+    .profile-page-bio-text {
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .profile-page-stats {
+      display: flex;
+      gap: 20px;
+    }
+    .profile-stat { font-size: 14px; color: var(--text-sub); }
+    .profile-stat strong { color: var(--text); font-weight: 700; }
+
+    /* 탭 */
+    .profile-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 56px;
+      background: var(--bg);
+      z-index: 9;
+    }
+    .profile-tab {
+      flex: 1; text-align: center;
+      padding: 14px 0;
+      font-size: 15px; font-weight: 600;
+      color: var(--text-sub);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .profile-tab.active {
+      color: var(--text);
+      border-bottom-color: var(--text);
+    }
+
+    /* 유저 피드 */
+    .profile-feed-empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-sub);
+      font-size: 15px;
+    }
+    .profile-spinner {
+      display: flex; justify-content: center; padding: 40px;
+    }
+    .profile-spinner::after {
+      content:""; width:28px; height:28px;
+      border:3px solid var(--border);
+      border-top-color:var(--text);
+      border-radius:50%;
+      animation:spin .7s linear infinite;
+    }
+
     /* 토스트 */
     #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 20px;border-radius:20px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s;z-index:999;}
     #toast.show{opacity:1;}
@@ -179,6 +328,40 @@
   </div>
 </div>
 
+
+<!-- 사용자 프로필 페이지 -->
+<div id="user-profile-page">
+  <div class="profile-page-header">
+    <button class="profile-page-back" id="profile-page-back">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    <div class="profile-page-header-info">
+      <h2 id="profile-page-header-name"></h2>
+      <span id="profile-page-post-count"></span>
+    </div>
+  </div>
+  <div class="profile-page-body">
+    <div class="profile-banner" id="profile-page-banner"></div>
+    <div class="profile-info-card">
+      <div class="profile-info-top">
+        <div id="profile-page-avatar-wrap"></div>
+      </div>
+      <div class="profile-page-name" id="profile-page-name"></div>
+      <div class="profile-page-sub" id="profile-page-sub"></div>
+      <div class="profile-page-bio-text" id="profile-page-bio-text"></div>
+      <div class="profile-page-stats">
+        <span class="profile-stat"><strong id="profile-page-stat-posts">0</strong> 게시물</span>
+      </div>
+    </div>
+    <div class="profile-tabs">
+      <div class="profile-tab active" id="profile-tab-posts">게시물</div>
+    </div>
+    <div id="profile-user-feed"><div class="profile-spinner"></div></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -229,6 +412,93 @@
     div.style.cssText = `width:${size}px;height:${size}px;font-size:${Math.floor(size*0.45)}px;`;
     div.textContent = (user.displayName||"?")[0].toUpperCase();
     return div;
+  }
+
+
+  // ── 사용자 프로필 페이지 ──
+  let profileFeedUnsubscribe = null;
+  let currentProfileUid = null;
+
+  function openUserProfilePage(uid, name, photoURL) {
+    currentProfileUid = uid;
+
+    // 헤더 이름
+    document.getElementById("profile-page-header-name").textContent = name || "사용자";
+    document.getElementById("profile-page-post-count").textContent = "";
+
+    // 아바타
+    const avatarWrap = document.getElementById("profile-page-avatar-wrap");
+    avatarWrap.innerHTML = "";
+    if (photoURL) {
+      const img = document.createElement("img");
+      img.src = photoURL;
+      img.className = "profile-page-avatar";
+      img.alt = name;
+      avatarWrap.appendChild(img);
+    } else {
+      const div = document.createElement("div");
+      div.className = "profile-page-avatar-placeholder";
+      div.textContent = (name || "?")[0].toUpperCase();
+      avatarWrap.appendChild(div);
+    }
+
+    // 이름/서브
+    document.getElementById("profile-page-name").textContent = name || "이름 없음";
+    document.getElementById("profile-page-bio-text").textContent = "";
+
+    // Firestore에서 사용자 정보 로드
+    db.collection("users").doc(uid).get().then(doc => {
+      const data = doc.exists ? doc.data() : {};
+      const bioText = data.bio || "";
+      document.getElementById("profile-page-bio-text").textContent = bioText;
+      const subEl = document.getElementById("profile-page-sub");
+      subEl.textContent = data.email || "";
+    });
+
+    // 페이지 열기
+    const page = document.getElementById("user-profile-page");
+    page.classList.add("open");
+    page.scrollTop = 0;
+
+    // 유저 피드 로드
+    loadUserFeed(uid, name, photoURL);
+  }
+
+  function closeUserProfilePage() {
+    document.getElementById("user-profile-page").classList.remove("open");
+    if (profileFeedUnsubscribe) { profileFeedUnsubscribe(); profileFeedUnsubscribe = null; }
+    currentProfileUid = null;
+  }
+
+  document.getElementById("profile-page-back").addEventListener("click", closeUserProfilePage);
+
+  function loadUserFeed(uid, name, photoURL) {
+    if (profileFeedUnsubscribe) { profileFeedUnsubscribe(); profileFeedUnsubscribe = null; }
+    const feedEl = document.getElementById("profile-user-feed");
+    feedEl.innerHTML = '<div class="profile-spinner"></div>';
+
+    profileFeedUnsubscribe = db.collection("posts")
+      .where("authorId", "==", uid)
+      .orderBy("createdAt", "desc")
+      .limit(50)
+      .onSnapshot(snap => {
+        // 게시물 수 업데이트
+        document.getElementById("profile-page-post-count").textContent = snap.size + "개의 게시물";
+        document.getElementById("profile-page-stat-posts").textContent = snap.size;
+
+        if (snap.empty) {
+          feedEl.innerHTML = '<div class="profile-feed-empty">아직 게시물이 없어요 ✍️</div>';
+          return;
+        }
+        feedEl.innerHTML = "";
+        snap.forEach(doc => {
+          const card = buildPostCard(doc.id, doc.data());
+          feedEl.appendChild(card);
+        });
+      }, err => {
+        console.error("프로필 피드 오류:", err);
+        feedEl.innerHTML = '<div class="profile-feed-empty">게시물을 불러올 수 없어요 😢</div>';
+      });
   }
 
   // ── 테마 ──
@@ -463,7 +733,24 @@
 
     // 아바타 삽입
     const avatarWrap = card.querySelector(".post-avatar-wrap");
-    avatarWrap.appendChild(avatarEl(authorInfo, 36));
+    const avEl = avatarEl(authorInfo, 36);
+    avEl.style.cursor = "pointer";
+    avEl.title = data.authorName || "사용자 프로필";
+    avEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openUserProfilePage(data.authorId, data.authorName, data.authorPhoto);
+    });
+    avatarWrap.appendChild(avEl);
+
+    // 작성자 이름 클릭도 프로필 이동
+    const authorNameEl = card.querySelector(".post-author");
+    if (authorNameEl) {
+      authorNameEl.style.cursor = "pointer";
+      authorNameEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openUserProfilePage(data.authorId, data.authorName, data.authorPhoto);
+      });
+    }
 
     // 댓글 작성자 아바타
     if (currentUser) {
