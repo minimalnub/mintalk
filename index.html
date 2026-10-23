@@ -456,10 +456,11 @@
       subEl.textContent = data.email || "";
     });
 
-    // 페이지 열기
+    // 페이지 열기 - body 스크롤 잠금
     const page = document.getElementById("user-profile-page");
     page.classList.add("open");
     page.scrollTop = 0;
+    document.body.style.overflow = "hidden";
 
     // 유저 피드 로드
     loadUserFeed(uid, name, photoURL);
@@ -469,6 +470,7 @@
     document.getElementById("user-profile-page").classList.remove("open");
     if (profileFeedUnsubscribe) { profileFeedUnsubscribe(); profileFeedUnsubscribe = null; }
     currentProfileUid = null;
+    document.body.style.overflow = "";  // 스크롤 복원
   }
 
   document.getElementById("profile-page-back").addEventListener("click", closeUserProfilePage);
