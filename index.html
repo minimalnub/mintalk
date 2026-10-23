@@ -1169,7 +1169,7 @@
     } else {
       stopFeed();
       stopNotifListener();
-      document.getElementById("feed").innerHTML = "";
+      startFeed(); // 비로그인에서도 게시글 읽기 시도
     }
   });
 
@@ -1278,10 +1278,18 @@
     if (feedUnsubscribe) feedUnsubscribe();
     const feed = document.getElementById("feed");
     feed.innerHTML = '<div class="spinner"></div>';
+    // 8초 타임아웃 안전망: 스피너가 계속 남아있으면 안내 메시지
+    const feedTimeoutId = setTimeout(() => {
+      const sp = feed.querySelector(".spinner");
+      if (sp) {
+        feed.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-sub);font-size:14px;">게시글을 불러오는 중 문제가 생겼어요.<br><small style="font-size:12px;opacity:.7;">잠시 후 새로고침 해보세요.</small></div>';
+      }
+    }, 8000);
     feedUnsubscribe = db.collection("posts")
       .orderBy("createdAt", "desc")
       .limit(50)
       .onSnapshot(snap => {
+        clearTimeout(feedTimeoutId); // 타임아웃 해제
         if (snap.empty) {
           feed.innerHTML = '<div class="feed-empty" style="text-align:center;padding:60px 20px;color:var(--text-sub);">아직 게시물이 없어요. 첫 글을 써보세요.</div>';
           return;
@@ -1331,7 +1339,13 @@
             }
           }
         });
-      }, err => console.error("피드 오류:", err));
+      }, err => {
+        clearTimeout(feedTimeoutId); // 타임아웃 해제
+        console.error("피드 오류:", err);
+        const feedEl = document.getElementById("feed");
+        if (feedEl) feedEl.innerHTML =
+          '<div style="text-align:center;padding:60px 20px;color:var(--text-sub);font-size:14px;">게시글을 불러오지 못했어요.<br><small style=\'font-size:12px;opacity:.7;\'>' + err.message + '</small></div>';
+      });
   }
 
   function stopFeed() {
