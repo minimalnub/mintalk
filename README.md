@@ -1,2 +1,2 @@
-# my-threads
+# MinTalk
 Minimal Talks
