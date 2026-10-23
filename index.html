@@ -160,7 +160,8 @@
     /* 배너 영역 */
     .profile-banner {
       height: 130px;
-      background: linear-gradient(135deg, #1d9bf0 0%, #0d47a1 100%);
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
     }
 
     /* 프로필 정보 카드 */
@@ -479,7 +480,6 @@
 
     profileFeedUnsubscribe = db.collection("posts")
       .where("authorId", "==", uid)
-      .orderBy("createdAt", "desc")
       .limit(50)
       .onSnapshot(snap => {
         // 게시물 수 업데이트
@@ -490,8 +490,16 @@
           feedEl.innerHTML = '<div class="profile-feed-empty">아직 게시물이 없어요 ✍️</div>';
           return;
         }
+
+        // 클라이언트에서 최신순 정렬 (복합 인덱스 불필요)
+        const docs = snap.docs.slice().sort((a, b) => {
+          const ta = a.data().createdAt ? a.data().createdAt.toMillis() : 0;
+          const tb = b.data().createdAt ? b.data().createdAt.toMillis() : 0;
+          return tb - ta;
+        });
+
         feedEl.innerHTML = "";
-        snap.forEach(doc => {
+        docs.forEach(doc => {
           const card = buildPostCard(doc.id, doc.data());
           feedEl.appendChild(card);
         });
