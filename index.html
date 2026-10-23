@@ -50,7 +50,7 @@
     .composer-inner{display:flex;gap:12px;align-items:flex-start;}
     .composer-right{flex:1;}
     .composer-name{font-weight:700;font-size:14px;margin-bottom:6px;}
-    #post-input{width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;resize:none;min-height:60px;line-height:1.5;font-family:inherit;}
+    #post-input{width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;resize:none;min-height:60px;line-height:1.5;font-family:inherit;overflow:hidden;}
     #post-input::placeholder{color:var(--text-sub);}
     .composer-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
     .char-count{font-size:12px;color:var(--text-sub);}
@@ -79,7 +79,7 @@
     .replies-section{margin-top:12px;margin-left:44px;border-top:1px solid var(--border);padding-top:12px;display:none;}
     .replies-section.open{display:block;}
     .reply-composer{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;}
-    .reply-input{flex:1;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--text);font-size:14px;outline:none;font-family:inherit;resize:none;min-height:38px;}
+    .reply-input{flex:1;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--text);font-size:14px;outline:none;font-family:inherit;resize:none;min-height:38px;overflow:hidden;transition:height .1s ease;}
     .reply-input::placeholder{color:var(--text-sub);}
     .reply-submit-btn{background:var(--btn-bg);color:var(--btn-text);border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s;white-space:nowrap;align-self:flex-end;}
     .reply-submit-btn:hover{opacity:.8;}
@@ -107,7 +107,7 @@
     .profile-avatar-placeholder{width:64px;height:64px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:var(--text-sub);}
     .profile-info h3{font-size:18px;font-weight:800;}
     .profile-info p{color:var(--text-sub);font-size:13px;margin-top:2px;}
-    .profile-bio{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:14px;outline:none;width:100%;resize:none;min-height:70px;font-family:inherit;margin-bottom:12px;}
+    .profile-bio{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:14px;outline:none;width:100%;resize:none;min-height:70px;font-family:inherit;margin-bottom:12px;overflow:hidden;}
     .signout-btn{width:100%;padding:12px;background:none;border:1.5px solid var(--border);border-radius:10px;color:#ff3b5c;font-size:15px;font-weight:600;cursor:pointer;transition:background .15s;}
     .signout-btn:hover{background:rgba(255,59,92,.08);}
 
@@ -401,6 +401,8 @@
     }
     #notif-overlay.open { display: block; }
 
+
+
     /* 토스트 */
     #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 20px;border-radius:20px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s;z-index:999;}
     #toast.show{opacity:1;}
@@ -516,6 +518,7 @@
     <div class="notif-loading">불러오는 중...</div>
   </div>
 </div>
+
 
 <div id="toast"></div>
 
@@ -888,6 +891,12 @@
     }
   }
 
+  // ── textarea 자동 높이 조절 ──
+  function autoResizeTextarea(el) {
+    el.style.height = "auto";          // 초기화 후
+    el.style.height = el.scrollHeight + "px"; // 내용 높이로 설정
+  }
+
   // ── 테마 ──
   const themeBtn = document.getElementById("theme-toggle");
   themeBtn.addEventListener("click", () => {
@@ -896,6 +905,250 @@
     html.setAttribute("data-theme", isDark ? "light" : "dark");
     themeBtn.textContent = isDark ? "DARK" : "LITE";
   });
+
+
+
+  // ── 알림 뱃지 & 패널 (Firestore 기반 멀티기기 동기화) ──
+  // 읽음 기준: users/{uid}.lastNotifReadAt (Timestamp)
+  // 미읽음  : reply.createdAt > lastNotifReadAt 인 댓글
+  let notifUnsubscribe = null;   // 내 게시물 replyCount 실시간 감지
+  let lastNotifReadAt = null;    // Firestore에서 가져온 읽음 기준 시각
+  let notifPanelOpen = false;
+  let notifItems = [];           // 현재 패널에 표시 중인 알림 목록
+
+  // ── 알림 리스너 시작 ──
+  // Firestore users 문서를 실시간으로 구독해
+  // lastNotifReadAt이 바뀌면 뱃지도 즉시 갱신 → 다른 기기에서 읽어도 반영
+  function startNotifListener(user) {
+    if (notifUnsubscribe) { notifUnsubscribe(); notifUnsubscribe = null; }
+
+    // users/{uid} 문서 실시간 구독
+    notifUnsubscribe = db.collection("users").doc(user.uid)
+      .onSnapshot(async userDoc => {
+        const data = userDoc.exists ? userDoc.data() : {};
+        lastNotifReadAt = data.lastNotifReadAt || null; // Firestore Timestamp or null
+        await refreshBadgeCount(user.uid);
+      }, err => console.error("알림 리스너 오류:", err));
+  }
+
+  function stopNotifListener() {
+    if (notifUnsubscribe) { notifUnsubscribe(); notifUnsubscribe = null; }
+    lastNotifReadAt = null;
+  }
+
+  // 미읽음 댓글 수를 Firestore에서 계산해 뱃지 업데이트
+  async function refreshBadgeCount(uid) {
+    try {
+      const myPostsSnap = await db.collection("posts").where("authorId", "==", uid).get();
+      if (myPostsSnap.empty) { updateNotifBadge(0); return; }
+
+      // 각 게시물의 댓글 중 lastNotifReadAt 이후 것만 카운트
+      const promises = myPostsSnap.docs.map(postDoc =>
+        db.collection("posts").doc(postDoc.id)
+          .collection("replies")
+          .get()
+          .then(rSnap => rSnap.docs.filter(rDoc => {
+            if (rDoc.data().authorId === uid) return false; // 내 댓글 제외
+            if (!lastNotifReadAt) return true;              // 기준 없으면 전부 미읽음
+            const ct = rDoc.data().createdAt;
+            return ct && ct.toMillis() > lastNotifReadAt.toMillis();
+          }).length)
+          .catch(() => 0)
+      );
+      const counts = await Promise.all(promises);
+      const total = counts.reduce((a, b) => a + b, 0);
+      updateNotifBadge(total);
+    } catch(e) { console.error("뱃지 계산 오류:", e); }
+  }
+
+  function updateNotifBadge(count) {
+    const badge = document.getElementById("notif-badge");
+    if (!badge) return;
+    if (count <= 0) {
+      badge.classList.add("hidden");
+      badge.textContent = "";
+    } else {
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.classList.remove("hidden");
+    }
+  }
+
+  // 읽음 처리 → Firestore에 현재 시각 저장 (모든 기기에서 동기화)
+  function markAllNotifSeen() {
+    if (!currentUser) return;
+    updateNotifBadge(0);
+    db.collection("users").doc(currentUser.uid).set(
+      { lastNotifReadAt: firebase.firestore.FieldValue.serverTimestamp() },
+      { merge: true }
+    ).catch(e => console.error("읽음 처리 오류:", e));
+  }
+
+  // ── 알림 패널 ──
+  function toggleNotifPanel() {
+    if (notifPanelOpen) closeNotifPanel();
+    else openNotifPanel();
+  }
+
+  function openNotifPanel() {
+    notifPanelOpen = true;
+    document.getElementById("notif-panel").classList.add("open");
+    document.getElementById("notif-overlay").classList.add("open");
+    loadNotifPanel();
+  }
+
+  function closeNotifPanel() {
+    notifPanelOpen = false;
+    document.getElementById("notif-panel").classList.remove("open");
+    document.getElementById("notif-overlay").classList.remove("open");
+    markAllNotifSeen(); // 패널 닫을 때 Firestore에 읽음 기록
+  }
+
+  document.getElementById("notif-overlay").addEventListener("click", closeNotifPanel);
+  document.getElementById("notif-panel-clear").addEventListener("click", () => {
+    markAllNotifSeen();
+    document.querySelectorAll(".notif-item.unread").forEach(el => {
+      el.classList.remove("unread");
+      const dot = el.querySelector(".notif-dot");
+      if (dot) dot.remove();
+    });
+    updateNotifBadge(0);
+  });
+
+  async function loadNotifPanel() {
+    if (!currentUser) return;
+    const listEl = document.getElementById("notif-list");
+    listEl.innerHTML = '<div class="notif-loading">불러오는 중...</div>';
+
+    try {
+      // 내 게시물 가져오기
+      const myPostsSnap = await db.collection("posts")
+        .where("authorId", "==", currentUser.uid).get();
+
+      if (myPostsSnap.empty) {
+        listEl.innerHTML = '<div class="notif-empty" style="display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 아직 알림이 없어요</div>';
+        return;
+      }
+
+      // 각 게시물의 최근 댓글 수집 (병렬)
+      const promises = myPostsSnap.docs.map(postDoc =>
+        db.collection("posts").doc(postDoc.id)
+          .collection("replies")
+          .orderBy("createdAt", "desc")
+          .limit(10)
+          .get()
+          .then(rSnap => rSnap.docs.map(rDoc => ({
+            replyId: rDoc.id,
+            postId: postDoc.id,
+            postContent: postDoc.data().content || "",
+            authorName: rDoc.data().authorName || "익명",
+            authorPhoto: rDoc.data().authorPhoto || "",
+            authorId: rDoc.data().authorId || "",
+            content: rDoc.data().content || "",
+            createdAt: rDoc.data().createdAt
+          })))
+          .catch(() => [])
+      );
+
+      const results = await Promise.all(promises);
+      notifItems = results.flat()
+        .filter(n => n.authorId !== currentUser.uid) // 내 댓글 제외
+        .sort((a, b) => {
+          const ta = a.createdAt ? a.createdAt.toMillis() : 0;
+          const tb = b.createdAt ? b.createdAt.toMillis() : 0;
+          return tb - ta;
+        });
+
+      if (notifItems.length === 0) {
+        listEl.innerHTML = '<div class="notif-empty" style="display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 아직 댓글 알림이 없어요</div>';
+        return;
+      }
+
+      listEl.innerHTML = "";
+      notifItems.forEach(n => {
+        // 미읽음 판단: Firestore lastNotifReadAt 기준
+        const isUnread = (() => {
+          if (!lastNotifReadAt) return true;
+          const ct = n.createdAt;
+          return ct && ct.toMillis() > lastNotifReadAt.toMillis();
+        })();
+
+        const item = document.createElement("div");
+        item.className = "notif-item" + (isUnread ? " unread" : "");
+        item.title = "게시글로 이동";
+
+        // 아바타
+        const avDiv = document.createElement("div");
+        avDiv.className = "notif-item-avatar";
+        avDiv.appendChild(avatarEl({ displayName: n.authorName, photoURL: n.authorPhoto }, 36));
+
+        // 본문
+        const body = document.createElement("div");
+        body.className = "notif-item-body";
+        body.innerHTML = `
+          <div class="notif-item-top">
+            <span class="notif-item-name">${escHtml(n.authorName)}</span>
+            <span class="notif-item-action">님이 댓글을 달았어요</span>
+            <span class="notif-item-time">${timeAgo(n.createdAt)}</span>
+            ${isUnread ? '<span class="notif-dot"></span>' : ''}
+          </div>
+          <div class="notif-item-preview">${escHtml(n.content)}</div>
+          <div class="notif-item-post">내 게시글: ${escHtml(n.postContent.slice(0, 40))}${n.postContent.length > 40 ? "…" : ""}</div>
+        `;
+
+        item.appendChild(avDiv);
+        item.appendChild(body);
+
+        // 클릭 → 해당 게시글로 이동
+        item.addEventListener("click", () => {
+          closeNotifPanel();
+          scrollToPost(n.postId);
+        });
+
+        listEl.appendChild(item);
+      });
+
+    } catch(e) {
+      console.error("알림 로드 오류:", e);
+      listEl.innerHTML = '<div class="notif-empty">알림을 불러올 수 없어요</div>';
+    }
+  }
+
+  // 해당 postId 카드로 스크롤 이동 + 하이라이트
+  function scrollToPost(postId) {
+    // 프로필 페이지가 열려 있으면 닫기
+    const profilePage = document.getElementById("user-profile-page");
+    if (profilePage.classList.contains("open")) closeUserProfilePage();
+
+    const card = document.querySelector(`.post-card[data-id="${postId}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.style.transition = "background .2s";
+      card.style.background = "rgba(29,155,240,.12)";
+      setTimeout(() => { card.style.background = ""; }, 1800);
+    } else {
+      showToast("게시글을 찾을 수 없어요");
+    }
+  }
+
+  // ── textarea 자동 높이 조절 ──
+  function autoResizeTextarea(el) {
+    el.style.height = "auto";          // 초기화 후
+    el.style.height = el.scrollHeight + "px"; // 내용 높이로 설정
+  }
+
+  // ── 테마 ──
+  const themeBtn = document.getElementById("theme-toggle");
+  themeBtn.addEventListener("click", () => {
+    const html = document.documentElement;
+    const isDark = html.getAttribute("data-theme") === "dark";
+    html.setAttribute("data-theme", isDark ? "light" : "dark");
+    themeBtn.textContent = isDark ? "DARK" : "LITE";
+  });
+
+
+  // ── HELP 모달 ──
+
+
 
   // ── Auth ──
   document.getElementById("login-btn").addEventListener("click", () => {
@@ -997,6 +1250,7 @@
     charCount.textContent = len + " / 500";
     charCount.classList.toggle("warn", len > 450);
     postBtn.disabled = len === 0;
+    autoResizeTextarea(postInput);
   });
   postBtn.addEventListener("click", async () => {
     const text = postInput.value.trim();
@@ -1133,7 +1387,7 @@
       <div class="replies-section" id="replies-${postId}">
         <div class="reply-composer">
           <div class="reply-avatar-wrap"></div>
-          <textarea class="reply-input" placeholder="댓글 달기..." rows="1"></textarea>
+          <textarea class="reply-input" placeholder="댓글 달기..." rows="1" maxlength="500"></textarea>
           <button class="reply-submit-btn" disabled>게시</button>
         </div>
         <div class="replies-list" id="replies-list-${postId}">
@@ -1191,6 +1445,14 @@
     const replySubmit = card.querySelector(".reply-submit-btn");
     replyInput.addEventListener("input", () => {
       replySubmit.disabled = replyInput.value.trim().length === 0;
+      autoResizeTextarea(replyInput);
+    });
+    // 엔터 키: Shift+Enter → 줄바꿈, Enter만 → 게시
+    replyInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (!replySubmit.disabled) replySubmit.click();
+      }
     });
     replySubmit.addEventListener("click", () => submitReply(postId, replyInput, replySubmit));
 
@@ -1286,6 +1548,7 @@
       batch.update(postRef, { replyCount: firebase.firestore.FieldValue.increment(1) });
       await batch.commit();
       inputEl.value = "";
+      inputEl.style.height = "auto"; // 높이 리셋
       showToast("댓글이 달렸어요");
     } catch(e) { showToast("오류: " + e.message); }
     btnEl.disabled = false;
@@ -1328,7 +1591,7 @@
   }
 
   // ── XSS 방지 ──
-  function escHtml(str) {
+    function escHtml(str) {
     return String(str)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;")
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
