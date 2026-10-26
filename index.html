@@ -67,6 +67,7 @@
     .post-author{font-weight:700;font-size:14px;}
     .post-time{font-size:12px;color:var(--text-sub);}
     .post-content{margin:8px 0 12px 44px;font-size:15px;line-height:1.6;white-space:pre-wrap;word-break:break-word;}
+    .edited-label{font-size:11px;color:var(--text-sub);opacity:.7;}
     .post-actions{display:flex;gap:16px;margin-left:44px;align-items:center;}
     .action-btn{display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--text-sub);font-size:13px;padding:4px 0;transition:color .15s;font-family:inherit;}
     .action-btn:hover{color:var(--text);}
@@ -74,6 +75,25 @@
     .action-btn svg{width:18px;height:18px;}
     .delete-btn{background:none;border:none;cursor:pointer;color:var(--text-sub);font-size:18px;padding:4px;border-radius:6px;transition:color .15s,background .15s;line-height:1;}
     .delete-btn:hover{color:#ff3b5c;background:rgba(255,59,92,.1);}
+    /* ── 해시태그 · 멘션 ── */
+    .tag-hash{color:#1d9bf0;font-weight:600;cursor:pointer;}
+    .tag-hash:hover{text-decoration:underline;}
+    .tag-mention{color:#7c4dff;font-weight:600;cursor:pointer;}
+    .tag-mention:hover{text-decoration:underline;}
+    /* ── 게시글 수정 UI ── */
+    .edit-btn{background:none;border:none;cursor:pointer;color:var(--text-sub);padding:4px;border-radius:6px;transition:color .15s,background .15s;line-height:1;display:flex;align-items:center;}
+    .edit-btn:hover{color:#1d9bf0;background:rgba(29,155,240,.10);}
+    .post-edit-area{margin:8px 0 12px 44px;}
+    .post-edit-textarea{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:15px;line-height:1.6;color:var(--text);font-family:inherit;resize:none;outline:none;transition:border-color .15s;}
+    .post-edit-textarea:focus{border-color:#1d9bf0;}
+    .post-edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
+    .edit-cancel-btn{background:none;border:1.5px solid var(--border);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-sub);font-family:inherit;transition:background .15s;}
+    .edit-cancel-btn:hover{background:var(--surface2);}
+    .edit-save-btn{background:var(--btn-bg);color:var(--btn-text);border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .15s;}
+    .edit-save-btn:hover{opacity:.8;}
+    /* ── 무한스크롤 sentinel ── */
+    .feed-sentinel{height:1px;margin:0;}
+    .load-more-spinner{text-align:center;padding:20px;color:var(--text-sub);font-size:13px;}
 
     /* 댓글 영역 */
     .replies-section{margin-top:12px;margin-left:44px;border-top:1px solid var(--border);padding-top:12px;display:none;}
@@ -455,6 +475,7 @@
   </div>
 
   <div id="feed"><div class="spinner"></div></div>
+<div class="feed-sentinel" id="feed-sentinel"></div>
 </main>
 
 <!-- 프로필 모달 -->
@@ -542,8 +563,52 @@
   // ── 상태 ──
   let currentUser = null;
   let feedUnsubscribe = null;
-  // postId → Firestore 댓글 리스너 맵 (중복 방지)
-  const replyListeners = {};
+  let lastFeedDoc = null;       // 마지막으로 로드된 게시물 doc (페이지네이션)
+  let feedLoadingMore = false;  // 중복 요청 방지
+  let feedObserver = null;      // IntersectionObserver
+
+  // ── 카드 단위 댓글 리스너 관리 ──
+  // 같은 게시물이 메인 피드와 프로필 피드에 동시에 존재할 수 있으므로
+  // 리스너/DOM 조회는 postId가 아닌 카드(DOM 요소) 기준으로 처리한다.
+  function detachCardReplies(card) {
+    if (card && card._replyUnsub) { card._replyUnsub(); card._replyUnsub = null; }
+  }
+  function detachAllReplies(container) {
+    container.querySelectorAll(".post-card").forEach(detachCardReplies);
+  }
+  function removeCard(card) {
+    detachCardReplies(card);
+    card.remove();
+  }
+  // 카드를 새 데이터로 교체 (열린 댓글창·작성 중인 댓글 유지)
+  function replaceCard(container, existing, postId, data) {
+    const section = existing.querySelector(".replies-section");
+    const wasOpen = section && section.classList.contains("open");
+    const oldInput = existing.querySelector(".reply-input");
+    const draft = oldInput ? oldInput.value : "";
+    detachCardReplies(existing);
+    const newCard = buildPostCard(postId, data);
+    if (wasOpen) newCard.querySelector(".replies-section").classList.add("open");
+    if (draft) {
+      const input = newCard.querySelector(".reply-input");
+      input.value = draft;
+      newCard.querySelector(".reply-submit-btn").disabled = false;
+    }
+    container.replaceChild(newCard, existing);
+    if (wasOpen) attachReplyListener(postId, newCard);
+    return newCard;
+  }
+  // 정렬된 docs 배열 기준 올바른 위치에 카드 삽입
+  function insertCardInOrder(container, card, docs, postId) {
+    const idx = docs.findIndex(d => d.id === postId);
+    for (let j = idx + 1; j < docs.length; j++) {
+      const next = [...container.querySelectorAll(".post-card")].find(el => el.dataset.id === docs[j].id);
+      if (next) { container.insertBefore(card, next); return; }
+    }
+    const cards = container.querySelectorAll(".post-card");
+    if (cards.length) cards[cards.length - 1].after(card);
+    else container.appendChild(card);
+  }
 
   // ── 유틸 ──
   function showToast(msg) {
@@ -629,6 +694,9 @@
   function closeUserProfilePage() {
     document.getElementById("user-profile-page").classList.remove("open");
     if (profileFeedUnsubscribe) { profileFeedUnsubscribe(); profileFeedUnsubscribe = null; }
+    const profileFeedEl = document.getElementById("profile-user-feed");
+    detachAllReplies(profileFeedEl);
+    profileFeedEl.innerHTML = "";
     currentProfileUid = null;
     document.body.style.overflow = "";  // 스크롤 복원
   }
@@ -638,17 +706,18 @@
   function loadUserFeed(uid, name, photoURL) {
     if (profileFeedUnsubscribe) { profileFeedUnsubscribe(); profileFeedUnsubscribe = null; }
     const feedEl = document.getElementById("profile-user-feed");
+    detachAllReplies(feedEl);
     feedEl.innerHTML = '<div class="profile-spinner"></div>';
 
     profileFeedUnsubscribe = db.collection("posts")
       .where("authorId", "==", uid)
-      .limit(50)
       .onSnapshot(snap => {
         // 게시물 수 업데이트
         document.getElementById("profile-page-post-count").textContent = snap.size + "개의 게시물";
         document.getElementById("profile-page-stat-posts").textContent = snap.size;
 
         if (snap.empty) {
+          detachAllReplies(feedEl);
           feedEl.innerHTML = '<div class="profile-feed-empty">아직 게시물이 없어요.</div>';
           return;
         }
@@ -659,62 +728,28 @@
         const empty = feedEl.querySelector(".profile-feed-empty");
         if (empty) empty.remove();
 
-        // 클라이언트에서 최신순 정렬 (복합 인덱스 불필요)
-        const docs = snap.docs.slice().sort((a, b) => {
-          const ta = a.data().createdAt ? a.data().createdAt.toMillis() : 0;
-          const tb = b.data().createdAt ? b.data().createdAt.toMillis() : 0;
-          return tb - ta;
-        });
+        // 클라이언트에서 최신순 정렬 (복합 인덱스 불필요, 방금 쓴 글(createdAt 미확정)은 맨 위)
+        const tsOf = d => { const c = d.data({ serverTimestamps: "estimate" }).createdAt; return c ? c.toMillis() : Infinity; };
+        const docs = snap.docs.slice().sort((a, b) => tsOf(b) - tsOf(a));
 
         // 삭제된 카드 제거
-        const existingIds = new Set([...feedEl.querySelectorAll(".post-card")].map(el => el.dataset.id));
         const newIds = new Set(docs.map(d => d.id));
-        existingIds.forEach(id => {
-          if (!newIds.has(id)) {
-            const el = feedEl.querySelector(`[data-id="${id}"]`);
-            if (el) el.remove();
-            if (replyListeners[id]) { replyListeners[id](); delete replyListeners[id]; }
-          }
+        feedEl.querySelectorAll(".post-card").forEach(el => {
+          if (!newIds.has(el.dataset.id)) removeCard(el);
         });
 
         // 변경된 카드만 처리
         snap.docChanges().forEach(change => {
           const doc = change.doc;
           const data = doc.data();
+          const existing = [...feedEl.querySelectorAll(".post-card")].find(el => el.dataset.id === doc.id);
           if (change.type === "added") {
-            // 올바른 위치에 삽입 (최신순)
-            const card = buildPostCard(doc.id, data);
-            // createdAt 기준으로 정렬된 위치에 삽입
-            const allCards = [...feedEl.querySelectorAll(".post-card")];
-            const newTs = data.createdAt ? data.createdAt.toMillis() : 0;
-            let inserted = false;
-            for (const existing of allCards) {
-              const existingDoc = snap.docs.find(d => d.id === existing.dataset.id);
-              if (existingDoc) {
-                const existTs = existingDoc.data().createdAt ? existingDoc.data().createdAt.toMillis() : 0;
-                if (newTs > existTs) {
-                  feedEl.insertBefore(card, existing);
-                  inserted = true;
-                  break;
-                }
-              }
-            }
-            if (!inserted) feedEl.appendChild(card);
+            if (existing) return;
+            insertCardInOrder(feedEl, buildPostCard(doc.id, data), docs, doc.id);
           } else if (change.type === "modified") {
-            const existing = feedEl.querySelector(`[data-id="${doc.id}"]`);
-            if (existing) {
-              const wasOpen = existing.querySelector(".replies-section")?.classList.contains("open");
-              if (replyListeners[doc.id]) { replyListeners[doc.id](); delete replyListeners[doc.id]; }
-              const newCard = buildPostCard(doc.id, data);
-              if (wasOpen) {
-                const newReplies = newCard.querySelector(".replies-section");
-                if (newReplies) newReplies.classList.add("open");
-              }
-              feedEl.replaceChild(newCard, existing);
-              if (wasOpen) attachReplyListener(doc.id);
-            }
+            if (existing) replaceCard(feedEl, existing, doc.id, data);
           }
-          // "removed"는 위 existingIds 루프에서 처리
+          // "removed"는 위에서 처리
         });
       }, err => {
         console.error("프로필 피드 오류:", err);
@@ -726,7 +761,8 @@
   // ── 알림 뱃지 & 패널 (Firestore 기반 멀티기기 동기화) ──
   // 읽음 기준: users/{uid}.lastNotifReadAt (Timestamp)
   // 미읽음  : reply.createdAt > lastNotifReadAt 인 댓글
-  let notifUnsubscribe = null;   // 내 게시물 replyCount 실시간 감지
+  let notifUnsubscribe = null;   // users 문서 (읽음 기준) 실시간 감지
+  let notifPostsUnsubscribe = null; // 내 게시물 replyCount 실시간 감지
   let lastNotifReadAt = null;    // Firestore에서 가져온 읽음 기준 시각
   let notifPanelOpen = false;
   let notifItems = [];           // 현재 패널에 표시 중인 알림 목록
@@ -735,19 +771,38 @@
   // Firestore users 문서를 실시간으로 구독해
   // lastNotifReadAt이 바뀌면 뱃지도 즉시 갱신 → 다른 기기에서 읽어도 반영
   function startNotifListener(user) {
-    if (notifUnsubscribe) { notifUnsubscribe(); notifUnsubscribe = null; }
+    stopNotifListener();
 
     // users/{uid} 문서 실시간 구독
     notifUnsubscribe = db.collection("users").doc(user.uid)
       .onSnapshot(async userDoc => {
-        const data = userDoc.exists ? userDoc.data() : {};
+        const data = userDoc.exists ? userDoc.data({ serverTimestamps: "estimate" }) : {};
         lastNotifReadAt = data.lastNotifReadAt || null; // Firestore Timestamp or null
         await refreshBadgeCount(user.uid);
       }, err => console.error("알림 리스너 오류:", err));
+
+    // 내 게시물의 replyCount 변화(새 댓글/삭제)를 감지해 뱃지 갱신
+    const knownCounts = new Map();
+    let firstSnap = true;
+    notifPostsUnsubscribe = db.collection("posts").where("authorId", "==", user.uid)
+      .onSnapshot(snap => {
+        let changed = false;
+        snap.docs.forEach(d => {
+          const c = d.data().replyCount || 0;
+          if (knownCounts.has(d.id) && knownCounts.get(d.id) !== c) changed = true;
+          knownCounts.set(d.id, c);
+        });
+        if (!firstSnap && changed) {
+          refreshBadgeCount(user.uid);
+          if (notifPanelOpen) loadNotifPanel();
+        }
+        firstSnap = false;
+      }, err => console.error("내 게시물 감지 오류:", err));
   }
 
   function stopNotifListener() {
     if (notifUnsubscribe) { notifUnsubscribe(); notifUnsubscribe = null; }
+    if (notifPostsUnsubscribe) { notifPostsUnsubscribe(); notifPostsUnsubscribe = null; }
     lastNotifReadAt = null;
   }
 
@@ -934,8 +989,10 @@
     const profilePage = document.getElementById("user-profile-page");
     if (profilePage.classList.contains("open")) closeUserProfilePage();
 
-    const card = document.querySelector(`.post-card[data-id="${postId}"]`);
+    const card = [...document.querySelectorAll("#feed .post-card")].find(el => el.dataset.id === postId);
     if (card) {
+      const section = card.querySelector(".replies-section");
+      if (section && !section.classList.contains("open")) card.querySelector(".reply-toggle-btn").click();
       card.scrollIntoView({ behavior: "smooth", block: "center" });
       card.style.transition = "background .2s";
       card.style.background = "rgba(29,155,240,.12)";
@@ -1094,9 +1151,16 @@
 
   // ── 피드 (실시간) ──
   function startFeed() {
-    if (feedUnsubscribe) feedUnsubscribe();
+    stopFeed();
     const feed = document.getElementById("feed");
+    detachAllReplies(feed);
     feed.innerHTML = '<div class="spinner"></div>';
+    // 무한 스크롤 관찰 시작
+    const sentinel = document.getElementById("feed-sentinel");
+    feedObserver = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) loadMoreFeed();
+    }, { rootMargin: "300px" });
+    feedObserver.observe(sentinel);
     // 8초 타임아웃 안전망: 스피너가 계속 남아있으면 안내 메시지
     const feedTimeoutId = setTimeout(() => {
       const sp = feed.querySelector(".spinner");
@@ -1106,25 +1170,18 @@
     }, 8000);
     feedUnsubscribe = db.collection("posts")
       .orderBy("createdAt", "desc")
-      .limit(50)
+      .limit(20)
       .onSnapshot(snap => {
         clearTimeout(feedTimeoutId); // 타임아웃 해제
         if (snap.empty) {
           feed.innerHTML = '<div class="feed-empty" style="text-align:center;padding:60px 20px;color:var(--text-sub);">아직 게시물이 없어요. 첫 글을 써보세요.</div>';
           return;
         }
-        // 기존 카드 없는 postId 제거, 새 카드 추가
-        const existingIds = new Set([...feed.querySelectorAll(".post-card")].map(el => el.dataset.id));
-        const newIds = new Set(snap.docs.map(d => d.id));
-
-        // 삭제된 게시물 카드 제거
-        existingIds.forEach(id => {
-          if (!newIds.has(id)) {
-            const el = feed.querySelector(`[data-id="${id}"]`);
-            if (el) el.remove();
-            if (replyListeners[id]) { replyListeners[id](); delete replyListeners[id]; }
-          }
-        });
+        // 첫 스냅샷의 마지막 문서를 페이지네이션 기준으로 저장
+        if (!lastFeedDoc) {
+          lastFeedDoc = snap.docs[snap.docs.length - 1];
+          retriggerFeedObserver();
+        }
 
         // 스피너 제거
         const spinner = feed.querySelector(".spinner");
@@ -1132,30 +1189,22 @@
         const emptyMsg = feed.querySelector(".feed-empty");
         if (emptyMsg) emptyMsg.remove();
 
+        const docs = snap.docs;
+        const lastTs = docs[docs.length - 1].data({ serverTimestamps: "estimate" }).createdAt;
         snap.docChanges().forEach(change => {
           const doc = change.doc;
           const data = doc.data();
+          const existing = [...feed.querySelectorAll(".post-card")].find(el => el.dataset.id === doc.id);
           if (change.type === "added") {
-            const card = buildPostCard(doc.id, data);
-            // 최신순이므로 맨 앞에 삽입
-            const firstCard = feed.querySelector(".post-card");
-            if (firstCard) feed.insertBefore(card, firstCard);
-            else feed.appendChild(card);
+            if (existing) return;
+            insertCardInOrder(feed, buildPostCard(doc.id, data), docs, doc.id);
           } else if (change.type === "modified") {
-            const existing = feed.querySelector(`[data-id="${doc.id}"]`);
-            if (existing) {
-              const wasOpen = existing.querySelector(".replies-section")?.classList.contains("open");
-              // 기존 리스너 해제 (DOM 교체 전)
-              if (replyListeners[doc.id]) { replyListeners[doc.id](); delete replyListeners[doc.id]; }
-              const newCard = buildPostCard(doc.id, data);
-              if (wasOpen) {
-                const newReplies = newCard.querySelector(".replies-section");
-                if (newReplies) newReplies.classList.add("open");
-              }
-              feed.replaceChild(newCard, existing);
-              // 열려 있었으면 새 DOM에 리스너 재등록
-              if (wasOpen) attachReplyListener(doc.id);
-            }
+            if (existing) replaceCard(feed, existing, doc.id, data);
+          } else if (change.type === "removed" && existing) {
+            // limit(20)에서 밀려난 글(더 오래된 글)은 유지하고, 실제로 삭제된 글만 제거
+            const ts = data.createdAt;
+            const pushedOut = snap.size >= 20 && ts && lastTs && ts.toMillis() < lastTs.toMillis();
+            if (!pushedOut) removeCard(existing);
           }
         });
       }, err => {
@@ -1167,10 +1216,66 @@
       });
   }
 
+  // ── 추가 게시물 로드 (무한 스크롤) ──
+  async function loadMoreFeed() {
+    if (feedLoadingMore || !lastFeedDoc) return;
+    feedLoadingMore = true;
+
+    const feed = document.getElementById("feed");
+    const spinner = document.createElement("div");
+    spinner.className = "load-more-spinner";
+    spinner.textContent = "불러오는 중...";
+    feed.appendChild(spinner);
+
+    try {
+      const snap = await db.collection("posts")
+        .orderBy("createdAt", "desc")
+        .startAfter(lastFeedDoc)
+        .limit(20)
+        .get();
+
+      spinner.remove();
+
+      if (snap.empty) {
+        // 더 이상 게시물 없음 → sentinel 관찰 중단
+        if (feedObserver) { feedObserver.disconnect(); feedObserver = null; }
+        const end = document.createElement("div");
+        end.className = "load-more-spinner";
+        end.textContent = "모든 게시물을 불러왔어요 ✓";
+        feed.appendChild(end);
+        return;
+      }
+
+      snap.forEach(doc => {
+        if (![...feed.querySelectorAll(".post-card")].some(el => el.dataset.id === doc.id)) {
+          feed.appendChild(buildPostCard(doc.id, doc.data()));
+        }
+      });
+
+      lastFeedDoc = snap.docs[snap.docs.length - 1];
+    } catch(e) {
+      spinner.remove();
+      console.error("더 불러오기 오류:", e);
+    } finally {
+      feedLoadingMore = false;
+      retriggerFeedObserver();
+    }
+  }
+
+  // 센티널이 이미 화면 안에 있으면 콜백이 다시 호출되지 않으므로 재관찰
+  function retriggerFeedObserver() {
+    if (!feedObserver) return;
+    const sentinel = document.getElementById("feed-sentinel");
+    feedObserver.unobserve(sentinel);
+    feedObserver.observe(sentinel);
+  }
+
   function stopFeed() {
     if (feedUnsubscribe) { feedUnsubscribe(); feedUnsubscribe = null; }
-    Object.values(replyListeners).forEach(unsub => unsub());
-    Object.keys(replyListeners).forEach(k => delete replyListeners[k]);
+    if (feedObserver) { feedObserver.disconnect(); feedObserver = null; }
+    lastFeedDoc = null;
+    feedLoadingMore = false;
+    detachAllReplies(document.getElementById("feed"));
   }
 
   // ── 게시물 카드 생성 ──
@@ -1196,13 +1301,16 @@
           <div class="post-author-row">
             <span class="post-author">${escHtml(data.authorName||"익명")}</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="post-time">${timeAgo(data.createdAt)}</span>
-              ${isOwner ? `<button class="delete-btn" data-id="${postId}" title="삭제"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>` : ""}
+              <span class="post-time">${timeAgo(data.createdAt)}</span>${data.editedAt ? '<span class="edited-label">(수정됨)</span>' : ""}
+              ${isOwner ? `
+              <button class="edit-btn" data-id="${postId}" title="수정"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="delete-btn" data-id="${postId}" title="삭제"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+            ` : ""}
             </div>
           </div>
         </div>
       </div>
-      <div class="post-content">${escHtml(data.content||"")}</div>
+      <div class="post-content">${renderContent(data.content||"")}</div>
       <div class="post-actions">
         <button class="action-btn like-btn ${isLiked?"liked":""}" data-id="${postId}">
           <svg viewBox="0 0 24 24" fill="${isLiked?"currentColor":"none"}" stroke="currentColor" stroke-width="2">
@@ -1217,13 +1325,13 @@
           ${replyCount}
         </button>
       </div>
-      <div class="replies-section" id="replies-${postId}">
+      <div class="replies-section">
         <div class="reply-composer">
           <div class="reply-avatar-wrap"></div>
           <textarea class="reply-input" placeholder="댓글 달기..." rows="1" maxlength="500"></textarea>
           <button class="reply-submit-btn" disabled>게시</button>
         </div>
-        <div class="replies-list" id="replies-list-${postId}">
+        <div class="replies-list">
           <div style="text-align:center;color:var(--text-sub);font-size:13px;padding:12px 0;">댓글을 불러오는 중...</div>
         </div>
       </div>
@@ -1263,14 +1371,10 @@
     // 댓글 토글 버튼
     const replyToggle = card.querySelector(".reply-toggle-btn");
     replyToggle.addEventListener("click", () => {
-      const section = document.getElementById(`replies-${postId}`);
+      const section = card.querySelector(".replies-section");
       const isOpen = section.classList.toggle("open");
-      if (isOpen) {
-        // 처음 열 때만 리스너 등록
-        if (!replyListeners[postId]) {
-          attachReplyListener(postId);
-        }
-      }
+      // 열 때 이 카드에 리스너가 없으면 등록 (메인/프로필 피드 카드가 각각 독립적으로 동작)
+      if (isOpen && !card._replyUnsub) attachReplyListener(postId, card);
     });
 
     // 댓글 입력
@@ -1289,6 +1393,10 @@
     });
     replySubmit.addEventListener("click", () => submitReply(postId, replyInput, replySubmit));
 
+    // 게시물 수정
+    const editBtn = card.querySelector(".edit-btn");
+    if (editBtn) editBtn.addEventListener("click", () => startEditPost(postId, data.content || "", card));
+
     // 게시물 삭제
     const delBtn = card.querySelector(".delete-btn");
     if (delBtn) delBtn.addEventListener("click", () => deletePost(postId));
@@ -1297,15 +1405,15 @@
   }
 
   // ── 댓글 실시간 리스너 ──
-  function attachReplyListener(postId) {
-    const listEl = document.getElementById(`replies-list-${postId}`);
+  function attachReplyListener(postId, card) {
+    const listEl = card.querySelector(".replies-list");
     if (!listEl) return;
+    detachCardReplies(card);
 
-    const unsub = db.collection("posts").doc(postId)
+    card._replyUnsub = db.collection("posts").doc(postId)
       .collection("replies")
       .orderBy("createdAt", "asc")
       .onSnapshot(snap => {
-        if (!listEl) return; // 카드가 사라졌을 수도 있음
         if (snap.empty) {
           listEl.innerHTML = '<div class="no-replies">아직 댓글이 없어요. 첫 댓글을 달아보세요!</div>';
           return;
@@ -1316,9 +1424,10 @@
           const item = buildReplyItem(postId, doc.id, r);
           listEl.appendChild(item);
         });
-      }, err => console.error("댓글 오류:", err));
-
-    replyListeners[postId] = unsub;
+      }, err => {
+        console.error("댓글 오류:", err);
+        listEl.innerHTML = '<div class="no-replies">댓글을 불러오지 못했어요.</div>';
+      });
   }
 
   // ── 댓글 아이템 생성 ──
@@ -1392,11 +1501,63 @@
     if (!currentUser) { showToast("로그인이 필요해요!"); return; }
     const uid = currentUser.uid;
     const ref = db.collection("posts").doc(postId);
-    if (currentLikes.includes(uid)) {
-      await ref.update({ likes: firebase.firestore.FieldValue.arrayRemove(uid) });
-    } else {
-      await ref.update({ likes: firebase.firestore.FieldValue.arrayUnion(uid) });
-    }
+    try {
+      if (currentLikes.includes(uid)) {
+        await ref.update({ likes: firebase.firestore.FieldValue.arrayRemove(uid) });
+      } else {
+        await ref.update({ likes: firebase.firestore.FieldValue.arrayUnion(uid) });
+      }
+    } catch(e) { showToast("오류: " + e.message); }
+  }
+
+  // ── 게시물 수정 (인라인) ──
+  function startEditPost(postId, originalContent, card) {
+    const contentEl = card.querySelector(".post-content");
+    if (!contentEl) return;
+
+    // 이미 수정 중이면 무시
+    if (card.querySelector(".post-edit-area")) return;
+
+    // 본문 숨기고 textarea 표시
+    contentEl.style.display = "none";
+    const editArea = document.createElement("div");
+    editArea.className = "post-edit-area";
+    editArea.innerHTML = `
+      <textarea class="post-edit-textarea" maxlength="500" rows="3">${escHtml(originalContent)}</textarea>
+      <div class="post-edit-actions">
+        <button class="edit-cancel-btn">취소</button>
+        <button class="edit-save-btn">저장</button>
+      </div>`;
+    contentEl.insertAdjacentElement("afterend", editArea);
+
+    // textarea 자동 높이
+    const ta = editArea.querySelector(".post-edit-textarea");
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+    ta.addEventListener("input", () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; });
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+
+    // 취소
+    editArea.querySelector(".edit-cancel-btn").addEventListener("click", () => {
+      editArea.remove();
+      contentEl.style.display = "";
+    });
+
+    // 저장
+    editArea.querySelector(".edit-save-btn").addEventListener("click", async () => {
+      const newText = ta.value.trim();
+      if (!newText) { showToast("내용을 입력해주세요"); return; }
+      if (newText === originalContent) { editArea.remove(); contentEl.style.display = ""; return; }
+      try {
+        await db.collection("posts").doc(postId).update({
+          content: newText,
+          editedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showToast("수정됐어요");
+        // onSnapshot이 카드를 갱신하므로 별도 DOM 수정 불필요
+      } catch(e) { showToast("오류: " + e.message); }
+    });
   }
 
   // ── 게시물 삭제 ──
@@ -1405,7 +1566,8 @@
     if (!confirm("게시물을 삭제할까요?")) return;
     try {
       // 1. 리스너 먼저 해제 (삭제 중 onSnapshot 이벤트 방지)
-      if (replyListeners[postId]) { replyListeners[postId](); delete replyListeners[postId]; }
+      const cards = [...document.querySelectorAll(".post-card")].filter(el => el.dataset.id === postId);
+      cards.forEach(detachCardReplies);
 
       // 2. replies 하위 컬렉션 문서 전체 조회
       const repliesSnap = await db.collection("posts").doc(postId)
@@ -1422,6 +1584,7 @@
 
       // 4. 게시글 문서 삭제
       await db.collection("posts").doc(postId).delete();
+      cards.forEach(removeCard); // 무한스크롤로 불러온 카드 등 스냅샷에서 제거되지 않는 카드 정리
 
       showToast("삭제됐어요");
     } catch(e) { showToast("오류: " + e.message); }
@@ -1441,11 +1604,24 @@
   }
 
   // ── XSS 방지 ──
-    function escHtml(str) {
+  function escHtml(str) {
     return String(str)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;")
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
       .replace(/'/g,"&#39;");
+  }
+
+  // ── 해시태그 · 멘션 하이라이트 ──
+  function renderContent(text) {
+    // 1) XSS 방지 이스케이프
+    let safe = escHtml(text);
+    // 2) #해시태그 — 한글·영문·숫자·_
+    safe = safe.replace(/(^|\s)(#[\w\uAC00-\uD7A3\u3131-\u314E\u314F-\u3163]+)/g,
+      (_, pre, tag) => `${pre}<span class="tag-hash">${tag}</span>`);
+    // 3) @멘션 — 한글·영문·숫자·_
+    safe = safe.replace(/(^|\s)(@[\w\uAC00-\uD7A3\u3131-\u314E\u314F-\u3163]+)/g,
+      (_, pre, mention) => `${pre}<span class="tag-mention">${mention}</span>`);
+    return safe;
   }
 </script>
 </body>
